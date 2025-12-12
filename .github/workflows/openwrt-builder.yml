@@ -99,6 +99,22 @@ jobs:
         find dl -size -1024c -exec ls -l {} \; || true
         find dl -size -1024c -exec rm -f {} \; || true
 
+
+# --- 新增的清理步骤 START ---
+    - name: 🗑️ Clear OpenWrt Intermediate Files
+      run: |
+        set -euxo pipefail
+        cd openwrt
+        echo "清理 OpenWrt 中间构建文件和工具链..."
+        # 删除所有中间构建产物和工具链，仅保留 dl 目录和配置
+        make clean
+        # 可选：如果 dl 目录占用太多空间，可以执行 make dirclean 删除下载的源码包
+        # echo "清理 OpenWrt 下载的源码包 (dl)..."
+        # make dirclean
+        
+        echo "检查清理后的磁盘空间..."
+        df -h
+    # --- 新增的清理步骤 END ---
     - name: Compile the firmware
       id: compile
       run: |
