@@ -100,18 +100,24 @@ jobs:
         find dl -size -1024c -exec ls -l {} \; || true
         find dl -size -1024c -exec rm -f {} \; || true
 
-    - name: 🗑️ Clear OpenWrt Intermediate Files
+    - name: 🗑️ Final Cleanup for Space (Extreme)
       run: |
         set -euxo pipefail
         cd openwrt
-        echo "清理 OpenWrt 中间构建文件和工具链..."
-        # 删除所有中间构建产物和工具链，仅保留 dl 目录和配置
-        make clean
-        # 可选：如果 dl 目录占用太多空间，可以执行 make dirclean 删除下载的源码包
-        # echo "清理 OpenWrt 下载的源码包 (dl)..."
-        # make dirclean
+        echo "极致清理：删除 dl, staging_dir/target, bin/targets/packages"
         
-        echo "检查清理后的磁盘空间..."
+        # 1. 删除 dl 目录 (下载的源码包)
+        rm -rf dl || true
+        
+        # 2. 删除 staging_dir 中所有目标架构相关的库和工具链
+        # 这是最占空间的部分，编译完成后不再需要
+        rm -rf staging_dir/target-* || true
+        rm -rf staging_dir/toolchain-* || true
+        
+        # 3. 删除 bin/targets/xxx/packages/ 完整的软件包目录
+        find bin/targets -mindepth 2 -maxdepth 4 -type d -name "packages" -exec rm -rf {} + || true
+        
+        echo "清理后的磁盘使用情况："
         df -h
 
     - name: Compile the firmware
