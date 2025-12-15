@@ -35,6 +35,7 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         set -euxo pipefail
+        # 初始清理：删除大型工具和 Docker 缓存
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
         sudo docker image prune --all --force || true
         sudo -E apt-get -qq update
@@ -99,8 +100,6 @@ jobs:
         find dl -size -1024c -exec ls -l {} \; || true
         find dl -size -1024c -exec rm -f {} \; || true
 
-
-# --- 新增的清理步骤 START ---
     - name: 🗑️ Clear OpenWrt Intermediate Files
       run: |
         set -euxo pipefail
@@ -114,7 +113,7 @@ jobs:
         
         echo "检查清理后的磁盘空间..."
         df -h
-    # --- 新增的清理步骤 END ---
+
     - name: Compile the firmware
       id: compile
       run: |
@@ -142,16 +141,26 @@ jobs:
         ls -la bin || true
         find bin -maxdepth 6 -type f -print || true
 
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
-
-    - name: Upload bin directory (optional)
-      uses: actions/upload-artifact@v4
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
+    # --- 新增的编译后清理步骤 START ---
+    - name: 🗑️ Final Cleanup for Space
+      run: |
+        set -euxo pipefail
+        cd openwrt
+        echo "清理编译后不再需要的工具链、源码包和完整的IPK包目录..."
+        
+        # 1. 删除 staging_dir 中的工具链目录 (最重且编译后不需要)
+        rm -rf staging_dir/toolchain-* || true
+        
+        # 2. 删除 dl 目录 (下载的源码包)
+        rm -rf dl || true
+        
+        # 3. 删除 bin/targets/xxx/packages/ 完整的软件包目录
+        # 这对于生成固件是多余的，可以释放大量空间。
+        find bin/targets -mindepth 2 -maxdepth 4 -type d -name "packages" -exec rm -rf {} + || true
+        
+        echo "清理后的磁盘使用情况："
+        df -h
+    # --- 新增的编译后清理步骤 END ---
 
     - name: Organize files (find target dir & prepare firmware)
       id: organize
@@ -188,10 +197,18 @@ jobs:
         mkdir -p firmware
         cp -a "$TARGET_DIR"/* firmware/ || true
         # optional: remove packages subdir if you don't want to upload it
+        # (这行可以保留，作为双重保障，但上面 Final Cleanup 步骤已删除 packages 目录)
         rm -rf firmware/packages || true
 
         # set success output so upload step knows it's ok
         echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: Upload bin directory (optional)
+      uses: actions/upload-artifact@v4
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@v4
